@@ -66,6 +66,7 @@ import com.deniscerri.ytdl.util.DragSelectTouchListener
 import com.deniscerri.ytdl.util.Extensions.enableFastScroll
 import com.deniscerri.ytdl.util.Extensions.isURL
 import com.deniscerri.ytdl.util.Extensions.isYoutubeURL
+import com.deniscerri.ytdl.util.YoutubeSession
 import com.deniscerri.ytdl.util.NotificationUtil
 import com.deniscerri.ytdl.util.ThemeUtil
 import com.deniscerri.ytdl.core.RuntimeManager
@@ -331,13 +332,12 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
                                     onDownloadAnyway(queryList.first())
                                 },
                                 cookieFetch = {
-                                    val myIntent = Intent(requireContext(), WebViewActivity::class.java)
-                                    if (queryList.first().isYoutubeURL()) {
+                                    val myIntent = if (queryList.first().isYoutubeURL()) {
                                         // youtu.be / m.youtube.com links would store the cookies under the wrong domain
-                                        myIntent.putExtra("url", WebViewActivity.YOUTUBE_URL)
-                                        myIntent.putExtra(WebViewActivity.EXTRA_LOGIN, true)
+                                        YoutubeSession.signInIntent(requireContext())
                                     } else {
-                                        myIntent.putExtra("url", "https://${URL(queryList.first()).host}")
+                                        Intent(requireContext(), WebViewActivity::class.java)
+                                            .putExtra("url", "https://${URL(queryList.first()).host}")
                                     }
                                     cookiesFetchedResultLauncher.launch(myIntent)
                                 },
@@ -395,12 +395,53 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
 
     private var youtubeSignInResultLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            sharedPreferences?.edit()?.putBoolean("use_cookies", true)?.apply()
-            context?.let {
-                android.widget.Toast.makeText(it, R.string.youtube_signed_in, android.widget.Toast.LENGTH_LONG).show()
+    ) { _ ->
+        // the webview saves the session and shows the confirmation itself
+        refreshYoutubeSignInItem()
+    }
+
+    /** Person icon when signed out, person with a check mark when a YouTube session is saved */
+    private fun refreshYoutubeSignInItem() {
+        val item = materialToolbar?.menu?.findItem(R.id.youtube_sign_in) ?: return
+        val appContext = context?.applicationContext ?: return
+        viewLifecycleOwnerLiveData.value?.lifecycleScope?.launch {
+            val signedIn = withContext(Dispatchers.IO) {
+                runCatching { YoutubeSession.hasSession(appContext) }.getOrDefault(false)
             }
+            item.setIcon(if (signedIn) R.drawable.ic_youtube_signed_in else R.drawable.baseline_person_24)
+            item.title = getString(if (signedIn) R.string.youtube_account else R.string.youtube_sign_in)
+        }
+    }
+
+    private fun onYoutubeAccountClicked() {
+        val appContext = context?.applicationContext ?: return
+        viewLifecycleOwner.lifecycleScope.launch {
+            val signedIn = withContext(Dispatchers.IO) {
+                runCatching { YoutubeSession.hasSession(appContext) }.getOrDefault(false)
+            }
+            if (!signedIn) {
+                youtubeSignInResultLauncher.launch(YoutubeSession.signInIntent(requireContext()))
+                return@launch
+            }
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.youtube_account)
+                .setMessage(R.string.youtube_signed_in_status)
+                .setPositiveButton(R.string.youtube_switch_account) { _, _ ->
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        // clear the old account first, otherwise Google signs straight back into it
+                        YoutubeSession.signOut(appContext)
+                        youtubeSignInResultLauncher.launch(YoutubeSession.signInIntent(requireContext()))
+                    }
+                }
+                .setNeutralButton(R.string.youtube_sign_out) { _, _ ->
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        YoutubeSession.signOut(appContext)
+                        android.widget.Toast.makeText(appContext, R.string.youtube_signed_out, android.widget.Toast.LENGTH_SHORT).show()
+                        refreshYoutubeSignInItem()
+                    }
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
         }
     }
 
@@ -847,11 +888,7 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
                     true
                 }
                 R.id.youtube_sign_in -> {
-                    val signInIntent = Intent(requireContext(), WebViewActivity::class.java)
-                    signInIntent.putExtra("url", WebViewActivity.YOUTUBE_URL)
-                    signInIntent.putExtra("description", getString(R.string.youtube_sign_in))
-                    signInIntent.putExtra(WebViewActivity.EXTRA_LOGIN, true)
-                    youtubeSignInResultLauncher.launch(signInIntent)
+                    onYoutubeAccountClicked()
                     true
                 }
                 else -> false
@@ -863,6 +900,8 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                // a sign in from the download error notification happens outside this screen
+                refreshYoutubeSignInItem()
                 launch {
                     resultViewModel.availableUpdates.collect { updatesItem.isVisible = it.isNotEmpty() }
                 }

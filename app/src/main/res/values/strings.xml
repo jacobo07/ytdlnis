@@ -209,6 +209,14 @@
     <string name="get_cookies">Get cookies</string>
     <string name="youtube_sign_in">Sign in to YouTube</string>
     <string name="youtube_signed_in">Signed in. YouTube cookies saved and enabled</string>
+    <string name="youtube_account">YouTube account</string>
+    <string name="youtube_signed_in_status">You are signed in to YouTube. Downloads use your account.</string>
+    <string name="youtube_switch_account">Switch account</string>
+    <string name="youtube_sign_out">Sign out</string>
+    <string name="youtube_signed_out">Signed out of YouTube</string>
+    <string name="youtube_session_expired">Your YouTube session may have expired. Sign in again.</string>
+    <string name="youtube_sign_in_required">YouTube asks you to sign in</string>
+    <string name="fork_label" translatable="false">fork</string>
     <string name="no_cookies_found">No cookies were found for this site. Finish signing in, then try again</string>
     <string name="delete_all_cookies">Delete all cookies</string>
     <string name="confirm_delete_cookies_desc">Delete all the cookies, permanently</string>

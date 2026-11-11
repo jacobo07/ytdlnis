@@ -274,3 +274,6 @@ dependencies {
     implementation 'dev.rikka.shizuku:api:13.1.5'
     implementation 'dev.rikka.shizuku:provider:13.1.5'
 }
+
+// fork: version on top of upstream when this fork changed (FORK_REVISION), kept in its own file to avoid merge conflicts
+apply from: 'fork.gradle'

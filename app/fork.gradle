@@ -1,0 +1,44 @@
+// Fork versioning, applied at the end of app/build.gradle.
+//
+// FORK_REVISION (repo root) holds "<upstream versionName>:<revision>". While the upstream version matches,
+// the fork's own changes get a newer version than the upstream release they are built on:
+//   versionName 1.9.1.1 + revision 1  ->  1.9.1.1.1   (padded to 4 parts first: 1.10.0 -> 1.10.0.0.1)
+//   versionCode per abi  ->  upstream code + revision * 10   (abi codes are 1-4, so revisions 0-9 fit)
+// A new upstream version no longer matches the file, so the revision falls back to 0 and the plain upstream
+// version is used again. .github/workflows/fork-release.yml computes the same name for the release tag.
+
+def upstreamVersionName = android.defaultConfig.versionName
+def forkRevision = 0
+def forkRevisionFile = rootProject.file("FORK_REVISION")
+if (forkRevisionFile.exists()) {
+    def parts = forkRevisionFile.text.trim().split(":")
+    if (parts.length == 2 && parts[0].trim() == upstreamVersionName) {
+        forkRevision = parts[1].trim().toInteger()
+    }
+}
+if (forkRevision < 0 || forkRevision > 9) {
+    throw new GradleException("FORK_REVISION must be between 0 and 9, it is $forkRevision")
+}
+
+if (forkRevision > 0) {
+    def isBetaName = upstreamVersionName.endsWith("-beta")
+    def versionParts = upstreamVersionName.replace("-beta", "").split("\\.").toList()
+    while (versionParts.size() < 4) versionParts.add("0")
+    def forkVersionName = versionParts.join(".") + ".${forkRevision}" + (isBetaName ? "-beta" : "")
+
+    android.defaultConfig.versionName = forkVersionName
+
+    // registered after the upstream configureEach, so it runs after it and adds to its override
+    android.applicationVariants.configureEach { variant ->
+        variant.outputs.each { output ->
+            output.versionCodeOverride = output.versionCodeOverride + forkRevision * 10
+            // "ABI" is com.android.build.OutputFile.ABI, a class this applied script cannot see
+            def abi = output.getFilter("ABI") ?: "universal"
+            if (variant.flavorName == "github") {
+                output.outputFileName = "YTDLnis-${forkVersionName}-${abi}-${variant.buildType.name}-${variant.flavorName}.apk"
+            } else {
+                output.outputFileName = "YTDLnis-${forkVersionName}-${variant.flavorName}-${abi}-${variant.buildType.name}.apk"
+            }
+        }
+    }
+}

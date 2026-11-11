@@ -1,8 +1,11 @@
 name: Fork sync and release
 
-# Every day: merge the latest upstream (deniscerri/ytdlnis) into this fork's changes,
-# and when upstream has a version this fork has not released yet, build it signed
-# with the fork key and publish it as a release. The app's updater reads these releases.
+# Every day: merge the latest upstream (deniscerri/ytdlnis) into this fork's changes, and when the
+# resulting version has not been released here yet, build it signed with the fork key and publish it
+# as a release. The app's updater reads these releases.
+#
+# Version = upstream version, plus ".<fork revision>" when FORK_REVISION says the fork changed on top
+# of that upstream version (see app/fork.gradle). A new upstream version resets the revision to 0.
 
 on:
   schedule:
@@ -28,7 +31,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -48,23 +51,41 @@ jobs:
         run: |
           f=app/build.gradle
           read_def() { sed -nE "s/^def $1 = ([0-9a-z]+).*/\1/p" "$f" | head -n1; }
-          v="$(read_def versionMajor).$(read_def versionMinor).$(read_def versionPatch)"
+          base="$(read_def versionMajor).$(read_def versionMinor).$(read_def versionPatch)"
           build="$(read_def versionBuild)"
-          if [ "${build:-0}" -gt 0 ]; then v="$v.$build"; fi
-          prerelease=false
-          if [ "$(read_def isBeta)" = "true" ]; then v="$v-beta"; prerelease=true; fi
+          if [ "${build:-0}" -gt 0 ]; then base="$base.$build"; fi
+          beta=false
+          if [ "$(read_def isBeta)" = "true" ]; then beta=true; fi
+          upstream="$base"
+          if [ "$beta" = "true" ]; then upstream="$base-beta"; fi
+
+          # same rule as app/fork.gradle
+          rev=0
+          if [ -f FORK_REVISION ]; then
+            IFS=: read -r rev_for rev_value < FORK_REVISION || true
+            rev_for="$(echo "$rev_for" | tr -d '[:space:]')"
+            rev_value="$(echo "$rev_value" | tr -d '[:space:]')"
+            if [ "$rev_for" = "$upstream" ]; then rev="$rev_value"; fi
+          fi
+          v="$base"
+          if [ "$rev" -gt 0 ]; then
+            while [ "$(echo "$v" | tr -cd '.' | wc -c)" -lt 3 ]; do v="$v.0"; done
+            v="$v.$rev"
+          fi
+          if [ "$beta" = "true" ]; then v="$v-beta"; fi
+
           tag="v$v"
           exists=false
           if gh release view "$tag" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then exists=true; fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$beta" >> "$GITHUB_OUTPUT"
           echo "exists=$exists" >> "$GITHUB_OUTPUT"
-          echo "Upstream version $v, already released: $exists"
+          echo "Upstream $upstream, fork revision $rev, version $v, already released: $exists"
 
       - name: Set up JDK 17
         if: steps.version.outputs.exists == 'false' || inputs.force
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: 17
           distribution: "corretto"
@@ -97,8 +118,16 @@ jobs:
         if: steps.version.outputs.exists == 'false' || inputs.force
         run: |
           tag="${{ steps.version.outputs.tag }}"
+          version="${{ steps.version.outputs.version }}"
           apks=(app/build/outputs/apk/github/release/*.apk)
           ls -l "${apks[@]}"
+          # the tag must be the version inside the APK, or the updater offers the same update forever
+          for apk in "${apks[@]}"; do
+            case "$(basename "$apk")" in
+              "YTDLnis-$version-"*) ;;
+              *) echo "APK $apk does not carry version $version"; exit 1 ;;
+            esac
+          done
           if [ "${{ steps.version.outputs.exists }}" = "true" ]; then
             gh release upload "$tag" "${apks[@]}" --clobber -R "$GITHUB_REPOSITORY"
           else
@@ -106,6 +135,6 @@ jobs:
             if [ "${{ steps.version.outputs.prerelease }}" = "true" ]; then flags+=(--prerelease); fi
             gh release create "$tag" "${apks[@]}" "${flags[@]}" -R "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
-              --title "YTDLnis ${{ steps.version.outputs.version }} (fork)" \
-              --notes "YTDLnis ${{ steps.version.outputs.version }} from upstream deniscerri/ytdlnis@${UPSTREAM_SHA}, plus this fork's changes (clear YouTube sign-in button, Google sign-in working in the webview). Install the arm64-v8a APK on most phones."
+              --title "YTDLnis $version (fork)" \
+              --notes "YTDLnis $version: upstream deniscerri/ytdlnis@${UPSTREAM_SHA} plus this fork's changes (YouTube sign in button with account status, switch account and sign out, sign in offered when a download needs it, Google sign in working in the webview, safer updater). Install the arm64-v8a APK on most phones."
           fi

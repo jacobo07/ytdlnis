@@ -27,6 +27,7 @@ import com.deniscerri.ytdl.R
 import com.deniscerri.ytdl.database.viewmodel.CookieViewModel
 import com.deniscerri.ytdl.ui.BaseActivity
 import com.deniscerri.ytdl.util.Extensions.isYoutubeURL
+import com.deniscerri.ytdl.util.YoutubeSession
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
@@ -230,6 +231,20 @@ open class WebViewActivity : BaseActivity() {
             withContext(Dispatchers.Main) {
                 Toast.makeText(this@WebViewActivity, R.string.no_cookies_found, Toast.LENGTH_LONG).show()
             }
+        }
+        if (cookies != null && loginMode) {
+            // also reached from the download error notification, where no caller enables the cookies
+            val saved = runCatching { YoutubeSession.saveSession(this@WebViewActivity, cookies) }
+            withContext(Dispatchers.Main) {
+                Toast.makeText(
+                    this@WebViewActivity,
+                    if (saved.isSuccess) getString(R.string.youtube_signed_in) else "Something went wrong",
+                    Toast.LENGTH_LONG
+                ).show()
+                this@WebViewActivity.setResult(if (saved.isSuccess) RESULT_OK else RESULT_CANCELED)
+                this@WebViewActivity.finish()
+            }
+            return@withContext
         }
         cookies?.let {
             runCatching {

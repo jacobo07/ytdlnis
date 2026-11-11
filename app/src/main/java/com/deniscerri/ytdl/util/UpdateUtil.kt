@@ -72,13 +72,8 @@ class UpdateUtil(var context: Context) {
     /** The release to offer from a newest first list, null if already on the latest */
     private fun findUpdate(releases: List<GithubRelease>): GithubRelease? {
         val useBeta = sharedPreferences.getBoolean("update_beta", false)
-        val useNightly = sharedPreferences.getBoolean("update_nightly", false)
-
-        if (useNightly) {
-            // nightlies share the stable version name, so a nightly is new if it was published after this app was installed/updated
-            val installedAt = context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime
-            return releases.firstOrNull { it.tag_name.startsWith("nightly-") }?.takeIf { it.published_at.time > installedAt }
-        }
+        // no nightly channel: this fork only publishes versioned releases (see fork-release.yml),
+        // so a nightly choice made before installing the fork behaves as stable
 
         val currentVersion = BuildConfig.VERSION_NAME
 
@@ -178,11 +173,16 @@ class UpdateUtil(var context: Context) {
     suspend fun downloadReleaseApk(release: GithubRelease, onProgress: (Long) -> Unit) : Result<File> {
         return withContext(Dispatchers.IO) {
             try {
-                val releaseVersion = release.assets.firstOrNull {
-                    it.name.contains(Build.SUPPORTED_ABIS[0])
-                    && !it.name.contains("foss")
-                    && !it.name.contains("izzy")
-                }!!
+                // match "-<abi>-" as a whole word: "x86" is also inside "x86_64"; fall back to the universal apk
+                val githubApks = release.assets.filter {
+                    it.name.endsWith(".apk") && !it.name.contains("foss") && !it.name.contains("izzy")
+                }
+                val releaseVersion = Build.SUPPORTED_ABIS.firstNotNullOfOrNull { abi ->
+                    githubApks.firstOrNull { it.name.contains("-$abi-") }
+                } ?: githubApks.firstOrNull { it.name.contains("-universal-") }
+                    ?: return@withContext Result.failure(
+                        Throwable("No APK for this device (${Build.SUPPORTED_ABIS.joinToString()}) in release ${release.tag_name}")
+                    )
                 File(FileUtil.getDefaultApksPath()).mkdirs()
                 val tempApk = File(FileUtil.getDefaultApksPath(), "${releaseVersion.browser_download_url.split("/").last()}")
 

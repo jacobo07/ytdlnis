@@ -348,9 +348,19 @@ class NotificationUtil(var context: Context) {
         title: String?,
         error: String?,
         logID: Long?,
-        res: Resources
+        res: Resources,
+        url: String? = null
     ) {
         val notificationBuilder = getBuilder(DOWNLOAD_ERRORED_CHANNEL_ID)
+
+        // YouTube wants an account: offer the sign in right here, and say so when a saved session stopped working
+        val needsYoutubeSignIn = YoutubeSession.isYoutubeUrl(url) && YoutubeSession.isSignInError(error)
+        val hadYoutubeSession = needsYoutubeSignIn && runCatching { YoutubeSession.hasSession(context) }.getOrDefault(false)
+        val shownError = when {
+            hadYoutubeSession -> "${res.getString(R.string.youtube_session_expired)}\n$error"
+            needsYoutubeSignIn -> "${res.getString(R.string.youtube_sign_in_required)}\n$error"
+            else -> error
+        }
 
         val bundle = Bundle()
         if (logID != null){
@@ -388,7 +398,9 @@ class NotificationUtil(var context: Context) {
 
         notificationBuilder
             .setContentTitle("${res.getString(R.string.failed_download)}: $title")
-            .setContentText(error)
+            .setContentText(shownError)
+            // the builder is shared between error notifications, so always reset the style
+            .setStyle(NotificationCompat.BigTextStyle().bigText(shownError))
             .setSmallIcon(R.drawable.baseline_error_24)
             .setLargeIcon(
                 BitmapFactory.decodeResource(
@@ -402,6 +414,16 @@ class NotificationUtil(var context: Context) {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .clearActions()
 
+        if (needsYoutubeSignIn) {
+            val signInIntent = YoutubeSession.signInIntent(context).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val signInPendingIntent = PendingIntent.getActivity(
+                context,
+                Random.nextInt(),
+                signInIntent,
+                PendingIntent.FLAG_IMMUTABLE
+            )
+            notificationBuilder.addAction(0, res.getString(R.string.youtube_sign_in), signInPendingIntent)
+        }
         notificationBuilder.addAction(0, res.getString(R.string.configure_download), reconfigurePendingItent)
         if (logID != null){
             notificationBuilder.addAction(0, res.getString(R.string.logs), errorPendingIntent)

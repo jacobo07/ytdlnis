@@ -525,7 +525,8 @@ class DownloadWorker(
                                 downloadItem.title.ifEmpty { downloadItem.url },
                                 it.message,
                                 downloadItem.logID,
-                                resources
+                                resources,
+                                downloadItem.url
                             )
 
                             WorkerEventBus.post(

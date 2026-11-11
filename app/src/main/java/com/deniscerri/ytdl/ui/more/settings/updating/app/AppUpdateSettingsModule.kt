@@ -34,7 +34,7 @@ object AppUpdateSettingsModule : SettingModule {
         when(pref.key) {
             "app_status_card" -> {
                 (pref as UpdateStatusCardPreference).apply {
-                    version = BuildConfig.VERSION_NAME
+                    version = "${BuildConfig.VERSION_NAME} (${context.getString(R.string.fork_label)})"
                     showButton = canUpdateApp
                     buttonText = null
                     status = restingStatus(preferences.getBoolean("update_app", true))
@@ -48,8 +48,8 @@ object AppUpdateSettingsModule : SettingModule {
                     isVisible = canUpdateApp
                     setChannels(listOf(
                         "stable" to context.getString(R.string.channel_stable),
-                        "beta" to context.getString(R.string.channel_beta),
-                        "nightly" to context.getString(R.string.channel_nightly)
+                        "beta" to context.getString(R.string.channel_beta)
+                        // no nightly: this fork publishes only versioned releases
                     ))
                     selectedChannel = selectedChannel(preferences)
                     onChannelSelected = { value ->

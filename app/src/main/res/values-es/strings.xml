@@ -190,6 +190,13 @@
     <string name="get_cookies">Obtener las Cookies</string>
     <string name="youtube_sign_in">Iniciar sesión en YouTube</string>
     <string name="youtube_signed_in">Sesión iniciada. Cookies de YouTube guardadas y activadas</string>
+    <string name="youtube_account">Cuenta de YouTube</string>
+    <string name="youtube_signed_in_status">Has iniciado sesión en YouTube. Las descargas usan tu cuenta.</string>
+    <string name="youtube_switch_account">Cambiar de cuenta</string>
+    <string name="youtube_sign_out">Cerrar sesión</string>
+    <string name="youtube_signed_out">Sesión de YouTube cerrada</string>
+    <string name="youtube_session_expired">Puede que tu sesión de YouTube haya caducado. Vuelve a iniciar sesión.</string>
+    <string name="youtube_sign_in_required">YouTube pide iniciar sesión</string>
     <string name="delete_all_cookies">Borrar todas las cookies</string>
     <string name="download_over_metered_networks">Descargar sobre redes de uso medido</string>
     <string name="metered_network_download_start_info">La descarga comenzará cuando te conectes a una red sin límite de datos</string>

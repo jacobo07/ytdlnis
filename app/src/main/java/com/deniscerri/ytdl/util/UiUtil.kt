@@ -2231,7 +2231,8 @@ object UiUtil {
 
         val cookieRelated = message.contains("cookie", true) || message.contains("sign in", true)
         if (cookieRelated && !url.isNullOrBlank()) {
-            errDialog.setNeutralButton(context.getString(R.string.get_cookies)) { d: DialogInterface?, _ : Int ->
+            val label = if (YoutubeSession.isYoutubeUrl(url)) R.string.youtube_sign_in else R.string.get_cookies
+            errDialog.setNeutralButton(context.getString(label)) { d: DialogInterface?, _ : Int ->
                 cookieFetch()
             }
         }else if (continueAnyway) {
