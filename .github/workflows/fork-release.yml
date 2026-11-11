@@ -80,8 +80,12 @@ jobs:
             echo "Signing secrets are missing, refusing to publish an APK the installed app could not update to"
             exit 1
           fi
-          echo "$SIGNING_KEY" | base64 -d > app/release_keystore.jks
-          printf '%s\n' "$KEYSTORE_PROPERTIES" > keystore.properties
+          # secrets set from Windows can carry \r and spaces, strip them before decoding
+          printf '%s' "$SIGNING_KEY" | tr -d '\r\n\t ' | base64 -d > app/release_keystore.jks
+          printf '%s\n' "$KEYSTORE_PROPERTIES" | tr -d '\r' > keystore.properties
+          # fail here, not in Gradle, if the key and its password do not match
+          pass="$(sed -nE 's/^signingConfig.storePassword=(.*)$/\1/p' keystore.properties)"
+          keytool -list -keystore app/release_keystore.jks -storepass "$pass" > /dev/null
           touch local.properties
           chmod +x gradlew
 
