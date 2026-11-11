@@ -2,6 +2,7 @@ package com.deniscerri.ytdl.ui.more.cookies
 
 import android.annotation.SuppressLint
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Build
@@ -20,6 +21,8 @@ import androidx.core.view.children
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import com.deniscerri.ytdl.R
 import com.deniscerri.ytdl.database.viewmodel.CookieViewModel
 import com.deniscerri.ytdl.ui.BaseActivity
@@ -43,6 +46,9 @@ open class WebViewActivity : BaseActivity() {
     private lateinit var cookies: String
     private lateinit var webViewClient: WebViewClient
     private lateinit var preferences: SharedPreferences
+    // sign in mode: open the Google sign in page and save the cookies by itself once signed in
+    private var loginMode = false
+    private var autoSaveStarted = false
 
     @SuppressLint("SetJavaScriptEnabled")
     public override fun onCreate(savedInstanceState: Bundle?) {
@@ -50,6 +56,7 @@ open class WebViewActivity : BaseActivity() {
         setContentView(R.layout.webview_activity)
         url = intent.getStringExtra("url") ?: return finish()
         description = intent.getStringExtra("description") ?: ""
+        loginMode = intent.getBooleanExtra(EXTRA_LOGIN, false) && url.isYoutubeURL()
 
         val incognito = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             Application.getProcessName()
@@ -136,6 +143,8 @@ open class WebViewActivity : BaseActivity() {
                 settings.run {
                     javaScriptEnabled = true
                     javaScriptCanOpenWindowsAutomatically = true
+                    // Google refuses to sign in from a page that announces itself as an embedded webview
+                    userAgentString = browserUserAgent(context)
 
                     if (!incognito) {
                         cacheMode = WebSettings.LOAD_DEFAULT
@@ -157,6 +166,13 @@ open class WebViewActivity : BaseActivity() {
                     }
                 }
 
+                // the X-Requested-With header (app package name) also gives the webview away to Google
+                if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
+                    runCatching {
+                        WebSettingsCompat.setRequestedWithHeaderOriginAllowList(settings, emptySet())
+                    }
+                }
+
                 cookieManager.setAcceptCookie(true)
                 cookieManager.setAcceptThirdPartyCookies(this, true)
 
@@ -175,6 +191,11 @@ open class WebViewActivity : BaseActivity() {
                                     generateCookies()
                                 }
                             }
+                        } else if (loginMode && !autoSaveStarted && isSignedInToYoutube(url)) {
+                            // the user finished signing in, save the cookies without needing to find the OK button
+                            autoSaveStarted = true
+                            generateBtn.isEnabled = false
+                            view?.loadUrl("https://www.youtube.com/robots.txt")
                         }
                     }
 
@@ -192,7 +213,14 @@ open class WebViewActivity : BaseActivity() {
             }
         }
 
-        webView?.loadUrl(url)
+        webView?.loadUrl(if (loginMode) GOOGLE_YOUTUBE_SIGN_IN_URL else url)
+    }
+
+    private fun isSignedInToYoutube(pageUrl: String?): Boolean {
+        val host = runCatching { android.net.Uri.parse(pageUrl).host }.getOrNull() ?: return false
+        if (host != "youtube.com" && !host.endsWith(".youtube.com")) return false
+        val youtubeCookies = runCatching { cookieManager.getCookie(YOUTUBE_URL) }.getOrNull() ?: return false
+        return youtubeCookies.contains("LOGIN_INFO=")
     }
 
     private suspend fun generateCookies() = withContext(Dispatchers.IO) {
@@ -241,7 +269,7 @@ open class WebViewActivity : BaseActivity() {
                 useWideViewPort = true
                 loadWithOverviewMode = true
             } else {
-                userAgentString = WebSettings.getDefaultUserAgent(webView.context)
+                userAgentString = browserUserAgent(webView.context)
                 useWideViewPort = false
                 loadWithOverviewMode = false
             }
@@ -252,6 +280,20 @@ open class WebViewActivity : BaseActivity() {
 
     companion object {
         const val TAG = "WebViewActivity"
+        const val EXTRA_LOGIN = "login"
+        const val YOUTUBE_URL = "https://www.youtube.com"
+        const val GOOGLE_YOUTUBE_SIGN_IN_URL =
+            "https://accounts.google.com/ServiceLogin?service=youtube&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2F"
+
+        /**
+         * The default webview user agent with the webview markers removed ("; wv" and "Version/4.0"),
+         * so it reads as the regular Chrome browser of the device.
+         */
+        fun browserUserAgent(context: Context): String {
+            return WebSettings.getDefaultUserAgent(context)
+                .replace("; wv)", ")")
+                .replace(Regex("""Version/\d+(\.\d+)*\s"""), "")
+        }
     }
 
     data class CookieItem(

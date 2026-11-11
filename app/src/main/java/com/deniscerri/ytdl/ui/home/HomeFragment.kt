@@ -65,6 +65,7 @@ import com.deniscerri.ytdl.ui.more.cookies.WebViewActivity
 import com.deniscerri.ytdl.util.DragSelectTouchListener
 import com.deniscerri.ytdl.util.Extensions.enableFastScroll
 import com.deniscerri.ytdl.util.Extensions.isURL
+import com.deniscerri.ytdl.util.Extensions.isYoutubeURL
 import com.deniscerri.ytdl.util.NotificationUtil
 import com.deniscerri.ytdl.util.ThemeUtil
 import com.deniscerri.ytdl.core.RuntimeManager
@@ -331,7 +332,13 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
                                 },
                                 cookieFetch = {
                                     val myIntent = Intent(requireContext(), WebViewActivity::class.java)
-                                    myIntent.putExtra("url", "https://${URL(queryList.first()).host}")
+                                    if (queryList.first().isYoutubeURL()) {
+                                        // youtu.be / m.youtube.com links would store the cookies under the wrong domain
+                                        myIntent.putExtra("url", WebViewActivity.YOUTUBE_URL)
+                                        myIntent.putExtra(WebViewActivity.EXTRA_LOGIN, true)
+                                    } else {
+                                        myIntent.putExtra("url", "https://${URL(queryList.first()).host}")
+                                    }
                                     cookiesFetchedResultLauncher.launch(myIntent)
                                 },
                                 closed = {}
@@ -383,6 +390,17 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
         if (result.resultCode == Activity.RESULT_OK) {
             sharedPreferences?.edit()?.putBoolean("use_cookies", true)?.apply()
             startSearch()
+        }
+    }
+
+    private var youtubeSignInResultLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            sharedPreferences?.edit()?.putBoolean("use_cookies", true)?.apply()
+            context?.let {
+                android.widget.Toast.makeText(it, R.string.youtube_signed_in, android.widget.Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -826,6 +844,14 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
                 }
                 R.id.app_updates -> {
                     showAvailableUpdates()
+                    true
+                }
+                R.id.youtube_sign_in -> {
+                    val signInIntent = Intent(requireContext(), WebViewActivity::class.java)
+                    signInIntent.putExtra("url", WebViewActivity.YOUTUBE_URL)
+                    signInIntent.putExtra("description", getString(R.string.youtube_sign_in))
+                    signInIntent.putExtra(WebViewActivity.EXTRA_LOGIN, true)
+                    youtubeSignInResultLauncher.launch(signInIntent)
                     true
                 }
                 else -> false

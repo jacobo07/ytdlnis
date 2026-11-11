@@ -188,6 +188,8 @@
     <string name="new_cut">Nuevo corte</string>
     <string name="cookies">Cookies</string>
     <string name="get_cookies">Obtener las Cookies</string>
+    <string name="youtube_sign_in">Iniciar sesión en YouTube</string>
+    <string name="youtube_signed_in">Sesión iniciada. Cookies de YouTube guardadas y activadas</string>
     <string name="delete_all_cookies">Borrar todas las cookies</string>
     <string name="download_over_metered_networks">Descargar sobre redes de uso medido</string>
     <string name="metered_network_download_start_info">La descarga comenzará cuando te conectes a una red sin límite de datos</string>
