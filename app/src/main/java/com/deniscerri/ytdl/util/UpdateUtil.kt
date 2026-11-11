@@ -226,7 +226,9 @@ class UpdateUtil(var context: Context) {
     }
 
     companion object {
-        const val RELEASES_URL = "https://api.github.com/repos/deniscerri/ytdlnis/releases"
+        // this fork is signed with its own key, so it can only update to its own releases
+        // (built from the latest upstream release plus the fork's changes by .github/workflows/fork-release.yml)
+        const val RELEASES_URL = "https://api.github.com/repos/jacobo07/ytdlnis/releases"
         const val APP_LAST_CHECK_KEY = "app_last_update_check"
         const val YTDLP_LAST_CHECK_KEY = "ytdlp_last_update_check"
         var updatingYTDL = false

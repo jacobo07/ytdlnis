@@ -1,0 +1,107 @@
+name: Fork sync and release
+
+# Every day: merge the latest upstream (deniscerri/ytdlnis) into this fork's changes,
+# and when upstream has a version this fork has not released yet, build it signed
+# with the fork key and publish it as a release. The app's updater reads these releases.
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebuild and replace the APKs even if this version was already released"
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: fork-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Merge latest upstream
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/deniscerri/ytdlnis.git
+          git fetch --no-tags upstream main
+          # fails the run (and GitHub emails you) if upstream changed the same lines as the fork
+          git merge --no-edit upstream/main
+          echo "UPSTREAM_SHA=$(git rev-parse upstream/main)" >> "$GITHUB_ENV"
+
+      - name: Read version
+        id: version
+        run: |
+          f=app/build.gradle
+          read_def() { sed -nE "s/^def $1 = ([0-9a-z]+).*/\1/p" "$f" | head -n1; }
+          v="$(read_def versionMajor).$(read_def versionMinor).$(read_def versionPatch)"
+          build="$(read_def versionBuild)"
+          if [ "${build:-0}" -gt 0 ]; then v="$v.$build"; fi
+          prerelease=false
+          if [ "$(read_def isBeta)" = "true" ]; then v="$v-beta"; prerelease=true; fi
+          tag="v$v"
+          exists=false
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then exists=true; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "exists=$exists" >> "$GITHUB_OUTPUT"
+          echo "Upstream version $v, already released: $exists"
+
+      - name: Set up JDK 17
+        if: steps.version.outputs.exists == 'false' || inputs.force
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: "corretto"
+          cache: "gradle"
+
+      - name: Configure keystore
+        if: steps.version.outputs.exists == 'false' || inputs.force
+        env:
+          SIGNING_KEY: ${{ secrets.BASE_64_SIGNING_KEY }}
+          KEYSTORE_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}
+        run: |
+          if [ -z "$SIGNING_KEY" ] || [ -z "$KEYSTORE_PROPERTIES" ]; then
+            echo "Signing secrets are missing, refusing to publish an APK the installed app could not update to"
+            exit 1
+          fi
+          echo "$SIGNING_KEY" | base64 -d > app/release_keystore.jks
+          printf '%s\n' "$KEYSTORE_PROPERTIES" > keystore.properties
+          touch local.properties
+          chmod +x gradlew
+
+      - name: Build signed APKs
+        if: steps.version.outputs.exists == 'false' || inputs.force
+        run: ./gradlew assembleGithubRelease
+
+      - name: Publish release
+        if: steps.version.outputs.exists == 'false' || inputs.force
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          apks=(app/build/outputs/apk/github/release/*.apk)
+          ls -l "${apks[@]}"
+          if [ "${{ steps.version.outputs.exists }}" = "true" ]; then
+            gh release upload "$tag" "${apks[@]}" --clobber -R "$GITHUB_REPOSITORY"
+          else
+            flags=()
+            if [ "${{ steps.version.outputs.prerelease }}" = "true" ]; then flags+=(--prerelease); fi
+            gh release create "$tag" "${apks[@]}" "${flags[@]}" -R "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "YTDLnis ${{ steps.version.outputs.version }} (fork)" \
+              --notes "YTDLnis ${{ steps.version.outputs.version }} from upstream deniscerri/ytdlnis@${UPSTREAM_SHA}, plus this fork's changes (clear YouTube sign-in button, Google sign-in working in the webview). Install the arm64-v8a APK on most phones."
+          fi
